@@ -310,48 +310,56 @@
       const [darkMode, setDarkMode] = useState(true);
       const [showTaskModal, setShowTaskModal] = useState(false);
       const [taskForm, setTaskForm] = useState({ title: '', priority: 'A', category: 'Work', due: '' });
-      const categories = ['Morning', 'Work', 'Evening', 'Health', 'School'];
+      const categories = ['Morning', 'Evening', 'School', 'Work', 'Personal', 'Health'];
 
-      // Timer State (Drift-proof)
+      // Timer State (TIMESTAMP MATH for precision)
       const [timerMode, setTimerMode] = useState('idle');
       const [workTime, setWorkTime] = useState(0);
       const [breakTime, setBreakTime] = useState(0);
-      const lastTickRef = useRef(Date.now());
       
+      // We store the TIMESTAMP of when the session started/resumed
+      const startTimeRef = useRef(0);
+      // We store what the count was when we started/resumed
+      const initialTimeRef = useRef(0);
+      const initialBreakDurationRef = useRef(0);
+
       // Sync State
       const [user, setUser] = useState(null);
       const [syncStatus, setSyncStatus] = useState('offline'); 
 
-      // GLOBAL TIMER LOGIC (Drift-Proof)
+      // GLOBAL TIMER LOGIC (Timestamp Math)
       useEffect(() => {
         let i; 
+        
+        // When mode changes to active, set the anchor timestamp
+        if (timerMode === 'work') {
+           startTimeRef.current = Date.now();
+           initialTimeRef.current = workTime; // Resume from where we left off
+        } else if (timerMode === 'break') {
+           startTimeRef.current = Date.now();
+           initialBreakDurationRef.current = breakTime;
+        }
+
         if(timerMode !== 'idle') {
-          // Reset tick reference on mode change/resume
-          lastTickRef.current = Date.now();
-          
+          // Update 10 times a second for smoothness, but use math for accuracy
           i = setInterval(() => {
             const now = Date.now();
-            const delta = Math.floor((now - lastTickRef.current) / 1000);
+            const elapsed = Math.floor((now - startTimeRef.current) / 1000);
             
-            if (delta >= 1) {
-              lastTickRef.current = now; // Move reference forward
-              
-              if (timerMode === 'work') {
-                setWorkTime(prev => prev + delta);
-              } else if (timerMode === 'break') {
-                setBreakTime(prev => {
-                  const newVal = prev - delta;
-                  if(newVal <= 0){ 
-                    setTimerMode('idle'); 
-                    playNotificationSound(); 
-                    if(Notification.permission==='granted') new Notification("Time's Up!", { body: "Break Over!", icon: '⚡' });
-                    return 0;
-                  } 
-                  return newVal;
-                });
+            if (timerMode === 'work') {
+              setWorkTime(initialTimeRef.current + elapsed);
+            } else if (timerMode === 'break') {
+              const remaining = initialBreakDurationRef.current - elapsed;
+              if (remaining <= 0) {
+                 setBreakTime(0);
+                 setTimerMode('idle'); 
+                 playNotificationSound(); 
+                 if(Notification.permission==='granted') new Notification("Time's Up!", { body: "Break Over!", icon: '⚡' });
+              } else {
+                 setBreakTime(remaining);
               }
             }
-          }, 1000);
+          }, 100); // 100ms interval for responsive UI (no hitches)
         }
         return () => clearInterval(i);
       }, [timerMode]);
