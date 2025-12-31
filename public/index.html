@@ -66,21 +66,30 @@
       generateId: () => Math.random().toString(36).substr(2, 9),
       formatTime: (s) => `${Math.floor(s/3600)>0?Math.floor(s/3600)+':':''}${Math.floor((s%3600)/60).toString().padStart(Math.floor(s/3600)>0?2:1,'0')}:${(s%60).toString().padStart(2,'0')}`,
       playNotificationSound: () => { try { const a=new(window.AudioContext||window.webkitAudioContext)(); const o=a.createOscillator(); const g=a.createGain(); o.connect(g); g.connect(a.destination); o.frequency.setValueAtTime(500,a.currentTime); g.gain.exponentialRampToValueAtTime(0.01,a.currentTime+0.5); o.start(); o.stop(a.currentTime+0.5); } catch(e){} },
-      Icon: ({ name, size = 20, className = '' }) => { const i = { home: '🏠', tasks: '☑️', clock: '⏱️', list: '📋', shop: '🛍️', plus: '➕', trash: '🗑️', check: '✅', pass: '🎫', moon: '🌙', sun: '☀️', critical: '‼️', settings: '⚙️', bell: '🔔', clear: '❌' }; return React.createElement('span', { className: `inline-flex items-center justify-center select-none ${className}`, style: { fontSize: size } }, i[name] || '?'); }
+      Icon: ({ name, size = 20, className = '' }) => { const i = { home: '🏠', tasks: '☑️', clock: '⏱️', list: '📋', shop: '🛍️', plus: '➕', trash: '🗑️', check: '✅', pass: '🎫', moon: '🌙', sun: '☀️', critical: '‼️', settings: '⚙️', bell: '🔔', clear: '❌' }; return React.createElement('span', { className: `inline-flex items-center justify-center select-none ${className}`, style: { fontSize: size } }, i[name] || '?'); },
+      // FIX: Added helper to get local date string YYYY-MM-DD instead of UTC
+      getLocalDate: () => {
+        const d = new Date();
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      }
     };
 
     document.getElementById('loading').style.display = 'none';
     document.getElementById('root').style.display = 'block';
     
     const { useState, useEffect, useRef } = React;
-    const { Icon, generateId, formatTime, playNotificationSound } = window.utils;
+    const { Icon, generateId, formatTime, playNotificationSound, getLocalDate } = window.utils;
 
     // --- 2. COMPONENTS ---
 
     const StatCard = ({ label, value, color }) => React.createElement('div', { className: `bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border-l-4 border-${color}-500` }, React.createElement('div', { className: 'text-sm text-gray-500 dark:text-gray-400' }, label), React.createElement('div', { className: 'text-2xl font-bold' }, value));
 
     const DashboardView = ({ habits, history, points, passes, bankedTime, tasks, usePass, completeHabit, categories }) => {
-      const today = new Date().toISOString().split('T')[0];
+      // FIX: Use local date instead of ISO UTC date
+      const today = getLocalDate();
       const activeTasksCount = tasks.filter(t => !t.completed).length;
 
       const categorizedHabits = categories.map(cat => ({
@@ -475,7 +484,8 @@
       const handleLogout = () => window.fbServices.signOut(window.fbServices.auth);
 
       const completeHabit = (id) => {
-        const today = new Date().toISOString().split('T')[0];
+        // FIX: Use local date
+        const today = getLocalDate();
         const habit = habits.find(h => h.id === id);
         if(!habit) return;
         const newHistory = {...history, [today]: {...(history[today]||{}), [id]: {completed: true, type: 'check'}}};
@@ -486,7 +496,8 @@
 
       const usePass = (id) => {
         if(passes <= 0) return;
-        const today = new Date().toISOString().split('T')[0];
+        // FIX: Use local date
+        const today = getLocalDate();
         const newHistory = {...history, [today]: {...(history[today]||{}), [id]: {completed: true, type: 'pass'}}};
         setHistory(newHistory);
         setPasses(passes - 1);
