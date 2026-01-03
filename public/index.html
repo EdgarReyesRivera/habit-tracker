@@ -66,7 +66,7 @@
       generateId: () => Math.random().toString(36).substr(2, 9),
       formatTime: (s) => `${Math.floor(s/3600)>0?Math.floor(s/3600)+':':''}${Math.floor((s%3600)/60).toString().padStart(Math.floor(s/3600)>0?2:1,'0')}:${(s%60).toString().padStart(2,'0')}`,
       playNotificationSound: () => { try { const a=new(window.AudioContext||window.webkitAudioContext)(); const o=a.createOscillator(); const g=a.createGain(); o.connect(g); g.connect(a.destination); o.frequency.setValueAtTime(500,a.currentTime); g.gain.exponentialRampToValueAtTime(0.01,a.currentTime+0.5); o.start(); o.stop(a.currentTime+0.5); } catch(e){} },
-      Icon: ({ name, size = 20, className = '' }) => { const i = { home: '🏠', tasks: '☑️', clock: '⏱️', list: '📋', shop: '🛍️', plus: '➕', trash: '🗑️', check: '✅', pass: '🎫', moon: '🌙', sun: '☀️', critical: '‼️', settings: '⚙️', bell: '🔔', clear: '❌', edit: '✏️' }; return React.createElement('span', { className: `inline-flex items-center justify-center select-none ${className}`, style: { fontSize: size } }, i[name] || '?'); },
+      Icon: ({ name, size = 20, className = '' }) => { const i = { home: '🏠', tasks: '☑️', clock: '⏱️', list: '📋', shop: '🛍️', plus: '➕', trash: '🗑️', check: '✅', pass: '🎫', moon: '🌙', sun: '☀️', cloud: '☁️', critical: '‼️', settings: '⚙️', bell: '🔔', clear: '❌', edit: '✏️' }; return React.createElement('span', { className: `inline-flex items-center justify-center select-none ${className}`, style: { fontSize: size } }, i[name] || '?'); },
       getLocalDate: () => {
         const d = new Date();
         const year = d.getFullYear();
@@ -86,16 +86,37 @@
 
     const StatCard = ({ label, value, color }) => React.createElement('div', { className: `bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border-l-4 border-${color}-500` }, React.createElement('div', { className: 'text-sm text-gray-500 dark:text-gray-400' }, label), React.createElement('div', { className: 'text-2xl font-bold' }, value));
 
-    const DashboardView = ({ habits, history, points, passes, bankedTime, tasks, usePass, completeHabit, categories }) => {
+    // --- UPDATED DASHBOARD VIEW ---
+    const DashboardView = ({ habits, history, points, passes, bankedTime, tasks, usePass, completeHabit }) => {
       const today = getLocalDate();
       const activeTasksCount = tasks.filter(t => !t.completed).length;
 
-      const categorizedHabits = categories.map(cat => ({
-        name: cat,
-        items: habits.filter(h => h.category === cat).sort((a,b) => (a.time || '23:59').localeCompare(b.time || '23:59'))
-      })).filter(g => g.items.length > 0);
+      // Group habits by Time of Day
+      const getSection = (time) => {
+        if (!time) return 'Anytime';
+        const hour = parseInt(time.split(':')[0]);
+        if (hour < 12) return 'Morning';
+        if (hour < 17) return 'Afternoon';
+        return 'Evening';
+      };
+
+      const sections = ['Morning', 'Afternoon', 'Evening', 'Anytime'];
+      const sectionIcons = { 'Morning': 'sun', 'Afternoon': 'cloud', 'Evening': 'moon', 'Anytime': 'list' };
+
+      const groupedHabits = { 'Morning': [], 'Afternoon': [], 'Evening': [], 'Anytime': [] };
+
+      habits.forEach(habit => {
+        const section = getSection(habit.time);
+        groupedHabits[section].push(habit);
+      });
+
+      // Sort each group internally by time
+      Object.keys(groupedHabits).forEach(key => {
+        groupedHabits[key].sort((a,b) => (a.time || '23:59').localeCompare(b.time || '23:59'));
+      });
 
       return React.createElement('div', { className: 'space-y-6 fade-in' },
+        // Stats Row
         React.createElement('div', { className: 'grid grid-cols-2 md:grid-cols-4 gap-4' },
           React.createElement(StatCard, { label: 'Points Balance', value: points, color: 'purple' }),
           React.createElement(StatCard, { label: 'Emergency Passes', value: `${passes} / 3`, color: 'blue' }),
@@ -103,35 +124,44 @@
           React.createElement(StatCard, { label: 'Pending Tasks', value: activeTasksCount, color: 'orange' })
         ),
         
-        categorizedHabits.length === 0 && React.createElement('div', { className: 'text-center py-10 opacity-50' }, 'No habits set up. Go to Habit Management to add some!'),
+        habits.length === 0 && React.createElement('div', { className: 'text-center py-10 opacity-50' }, 'No habits set up. Go to Habit Management to add some!'),
         
-        categorizedHabits.map(group => 
-          React.createElement('div', { key: group.name, className: 'space-y-3' },
-            React.createElement('h3', { className: 'text-lg font-bold text-gray-600 dark:text-gray-300 ml-1' }, group.name),
-            group.items.map(habit => {
-              const status = history[today]?.[habit.id] || {};
-              const isCompleted = status.completed;
-              let borderClass = habit.priority === 'Critical' ? 'border-l-4 border-red-500' : habit.priority === 'High' ? 'border-l-4 border-orange-400' : 'border-transparent';
-              
-              return React.createElement('div', { key: habit.id, className: `bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm flex items-center justify-between border ${borderClass} transition-all ${isCompleted ? 'opacity-60 grayscale' : ''}` },
-                React.createElement('div', { className: 'flex-1' },
-                  React.createElement('div', { className: 'flex items-center gap-2' },
-                    React.createElement('span', { className: 'font-semibold text-lg' }, habit.name),
-                    habit.priority === 'Critical' && React.createElement(Icon, { name: 'critical', className: 'text-red-500' }),
-                    habit.time && React.createElement('span', { className: 'text-xs bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-gray-500' }, habit.time)
+        // Render Sections
+        React.createElement('div', { className: 'space-y-8' },
+          sections.map(section => {
+            const sectionHabits = groupedHabits[section];
+            if (sectionHabits.length === 0) return null;
+
+            return React.createElement('div', { key: section, className: 'space-y-3' },
+              React.createElement('div', { className: 'flex items-center gap-2 text-gray-500 dark:text-gray-400 font-semibold text-sm uppercase tracking-wider pb-1 border-b border-gray-200 dark:border-gray-700' },
+                React.createElement(Icon, { name: sectionIcons[section], size: 16 }),
+                section
+              ),
+              sectionHabits.map(habit => {
+                const status = history[today]?.[habit.id] || {};
+                const isCompleted = status.completed;
+                let borderClass = habit.priority === 'Critical' ? 'border-l-4 border-red-500' : habit.priority === 'High' ? 'border-l-4 border-orange-400' : 'border-transparent';
+                
+                return React.createElement('div', { key: habit.id, className: `bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm flex items-center justify-between border ${borderClass} transition-all ${isCompleted ? 'opacity-60 grayscale' : ''}` },
+                  React.createElement('div', { className: 'flex-1' },
+                    React.createElement('div', { className: 'flex items-center gap-2' },
+                      React.createElement('span', { className: 'font-semibold text-lg' }, habit.name),
+                      habit.time && React.createElement('span', { className: 'text-xs bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-gray-500' }, habit.time)
+                    ),
+                    React.createElement('div', { className: 'text-xs text-gray-500 mt-1 flex gap-3' },
+                      React.createElement('span', null, habit.category),
+                      React.createElement('span', { className: 'text-purple-500 font-medium' }, `+${habit.points} pts`),
+                      status.type === 'pass' && React.createElement('span', { className: 'text-blue-500' }, 'Used Pass')
+                    )
                   ),
-                  React.createElement('div', { className: 'text-xs text-gray-500 mt-1 flex gap-3' },
-                    React.createElement('span', { className: 'text-purple-500 font-medium' }, `+${habit.points} pts`),
-                    status.type === 'pass' && React.createElement('span', { className: 'text-blue-500' }, 'Used Pass')
-                  )
-                ),
-                !isCompleted ? React.createElement('div', { className: 'flex gap-2' },
-                  React.createElement('button', { onClick: () => usePass(habit.id), disabled: passes <= 0, className: 'p-2 text-blue-500 bg-blue-50 dark:bg-blue-900/20 rounded-lg disabled:opacity-30' }, React.createElement(Icon, { name: 'pass', size: 22 })),
-                  React.createElement('button', { onClick: () => completeHabit(habit.id), className: 'p-2 text-green-500 bg-green-50 dark:bg-green-900/20 rounded-lg' }, React.createElement(Icon, { name: 'check', size: 22 }))
-                ) : React.createElement('div', { className: 'text-green-500 font-bold px-4' }, 'Done')
-              );
-            })
-          )
+                  !isCompleted ? React.createElement('div', { className: 'flex gap-2' },
+                    React.createElement('button', { onClick: () => usePass(habit.id), disabled: passes <= 0, className: 'p-2 text-blue-500 bg-blue-50 dark:bg-blue-900/20 rounded-lg disabled:opacity-30' }, React.createElement(Icon, { name: 'pass', size: 22 })),
+                    React.createElement('button', { onClick: () => completeHabit(habit.id), className: 'p-2 text-green-500 bg-green-50 dark:bg-green-900/20 rounded-lg' }, React.createElement(Icon, { name: 'check', size: 22 }))
+                  ) : React.createElement('div', { className: 'text-green-500 font-bold px-4' }, 'Done')
+                );
+              })
+            );
+          })
         )
       );
     };
@@ -235,21 +265,66 @@
 
     const HabitsView = ({ habits, updateHabits, categories }) => {
        const [form, setForm] = useState({ name: '', points: 20, priority: 'Normal', time: '', category: 'Morning' });
+       const [editingId, setEditingId] = useState(null);
+       
+       const calculatePoints = (priority) => {
+         const basePoints = 20;
+         return priority === 'Critical' ? basePoints * 2 : basePoints;
+       };
+       
+       const handleSubmit = () => {
+         if(form.name) {
+           const habitData = { 
+             name: form.name, 
+             priority: form.priority, 
+             time: form.time, 
+             category: form.category,
+             points: calculatePoints(form.priority)
+           };
+           
+           if(editingId) {
+             updateHabits(habits.map(h => h.id === editingId ? { ...h, ...habitData } : h));
+             setEditingId(null);
+           } else {
+             updateHabits([...habits, { ...habitData, id: generateId() }]);
+           }
+           setForm({ name:'', points: 20, priority: 'Normal', time: '', category: 'Morning' });
+         }
+       };
+       
+       const handleEdit = (habit) => {
+         setForm({ name: habit.name, points: 20, priority: habit.priority, time: habit.time || '', category: habit.category });
+         setEditingId(habit.id);
+       };
+       
+       const handleCancel = () => {
+         setForm({ name:'', points: 20, priority: 'Normal', time: '', category: 'Morning' });
+         setEditingId(null);
+       };
+       
+       const sortedHabits = [...habits].sort((a, b) => (a.time || '23:59').localeCompare(b.time || '23:59'));
+       
        return React.createElement('div', { className: 'space-y-6 fade-in' },
          React.createElement('h2', { className: 'text-2xl font-bold' }, 'Habit Management'),
          React.createElement('div', { className: 'bg-white dark:bg-gray-800 p-6 rounded-xl shadow border border-purple-500/20 space-y-4' },
-           React.createElement('h3', { className: 'font-bold' }, 'Create New Habit'),
+           React.createElement('h3', { className: 'font-bold' }, editingId ? 'Edit Habit' : 'Create New Habit'),
            React.createElement('div', { className: 'grid md:grid-cols-2 gap-4' },
              React.createElement('input', { className: 'w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600', placeholder: 'Habit Name', value: form.name, onChange: e => setForm({...form, name: e.target.value}) }),
              React.createElement('select', { className: 'w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600', value: form.category, onChange: e => setForm({...form, category: e.target.value}) }, categories.map(c => React.createElement('option', { key:c, value:c }, c))),
              React.createElement('select', { className: 'w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600', value: form.priority, onChange: e => setForm({...form, priority: e.target.value}) }, ['Normal', 'High', 'Critical'].map(p => React.createElement('option', { key:p, value:p }, p))),
              React.createElement('input', { type: 'time', className: 'w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600', value: form.time, onChange: e => setForm({...form, time: e.target.value}) })
            ),
-           React.createElement('button', { onClick: () => { if(form.name) { updateHabits([...habits, { ...form, id: generateId(), points: Math.round(form.points * (form.priority==='Critical'?2:1)) }]); setForm({...form, name:'', points: 20, priority: 'Normal', time: '', category: 'Morning'}); } }, className: 'bg-purple-600 text-white px-6 py-2 rounded-lg hover:bg-purple-700 transition' }, 'Add Habit')
+           React.createElement('div', { className: 'flex gap-2' },
+             React.createElement('button', { onClick: handleSubmit, className: 'bg-purple-600 text-white px-6 py-2 rounded-lg hover:bg-purple-700 transition flex-1' }, editingId ? 'Update Habit' : 'Add Habit'),
+             editingId && React.createElement('button', { onClick: handleCancel, className: 'bg-gray-500 text-white px-6 py-2 rounded-lg hover:bg-gray-600 transition' }, 'Cancel')
+           )
          ),
-         habits.map(h => React.createElement('div', { key: h.id, className: 'flex justify-between p-4 bg-white dark:bg-gray-800 rounded shadow-sm items-center' }, 
-           React.createElement('div', null, React.createElement('div', { className: 'font-bold' }, h.name), React.createElement('div', { className: 'text-sm opacity-60' }, `${h.category} • ${h.time || 'Anytime'}`)),
-           React.createElement('button', { onClick: () => updateHabits(habits.filter(x => x.id !== h.id)), className: 'text-red-500 p-2 hover:bg-red-50 rounded' }, React.createElement(Icon, { name: 'trash' }))
+         sortedHabits.map(h => React.createElement('div', { key: h.id, className: 'flex justify-between p-4 bg-white dark:bg-gray-800 rounded shadow-sm items-center' }, 
+           React.createElement('div', null, React.createElement('div', { className: 'font-bold' }, h.name), React.createElement('div', { className: 'text-sm opacity-60' }, `${h.category} • ${h.time || 'Anytime'} • ${h.points} pts`)),
+           React.createElement('div', { className: 'flex gap-2' },
+             React.createElement('button', { onClick: () => handleEdit(h), className: 'text-purple-500 p-2 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded' }, React.createElement(Icon, { name: 'edit' })),
+             React.createElement('button', { onClick: () => updateHabits(habits.filter(x => x.id !== h.id)), className: 'text-red-500 p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded' }, React.createElement(Icon, { name: 'trash' }))
+           )
          ))
        );
     };
@@ -563,7 +638,7 @@
            React.createElement('div', { className: 'hidden md:flex flex-col gap-4 mt-auto mb-6' }, React.createElement('button', { onClick: () => setDarkMode(!darkMode), className: 'text-gray-400 hover:text-yellow-500' }, React.createElement(Icon, { name: darkMode ? 'sun' : 'moon' })))
         ),
         React.createElement('main', { className: 'flex-1 p-4 md:p-8 pb-24 md:pb-8 overflow-y-auto max-w-6xl mx-auto w-full' },
-          view === 'dashboard' && React.createElement(DashboardView, { habits, history, points, passes, bankedTime, tasks, usePass, completeHabit, categories }),
+          view === 'dashboard' && React.createElement(DashboardView, { habits, history, points, passes, bankedTime, tasks, usePass, completeHabit }),
           view === 'tasks' && React.createElement(TasksView, { tasks, updateTasks, setShowTaskModal, deleteTask, setEditingTask }),
           view === 'timer' && React.createElement(TimerView, { timerMode, setTimerMode, workTime, setWorkTime, breakTime, setBreakTime, bankedTime, updateBanked, setWorkTime }),
           view === 'habits' && React.createElement(HabitsView, { habits, updateHabits, categories }),
